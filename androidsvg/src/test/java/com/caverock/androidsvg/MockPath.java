@@ -1,23 +1,16 @@
 package com.caverock.androidsvg;
 
+import android.graphics.Matrix;
 import android.graphics.Path;
 
-import org.robolectric.Shadows;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
+import org.robolectric.shadow.api.Shadow;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Locale;
-
-import static android.R.attr.bottom;
-import static android.R.attr.left;
-import static android.R.attr.path;
-import static android.R.attr.right;
-import static android.R.attr.top;
-import static android.R.attr.x;
-import static android.R.attr.y;
-import static org.robolectric.shadows.ShadowPath.Point.Type.LINE_TO;
-import static org.robolectric.shadows.ShadowPath.Point.Type.MOVE_TO;
 
 /**
  * Created by Paul on 10/07/2017.
@@ -27,10 +20,13 @@ import static org.robolectric.shadows.ShadowPath.Point.Type.MOVE_TO;
 public class MockPath
 {
    private ArrayList<String>  path = new ArrayList<>();
+   private ArrayList<Matrix>  transforms = null;
 
+
+   @Implementation
    public void __constructor__()
    {
-      path.clear();;
+      path.clear();
    }
 
    @Implementation
@@ -60,7 +56,40 @@ public class MockPath
    @Implementation
    public void close()
    {
+      path.add("Z");
    }
+
+
+   @Implementation
+   public boolean  op(Path otherPath, Path.Op op)
+   {
+      MockPath  mockOtherPath = ((MockPath) Shadow.extract(otherPath));
+      if (path.isEmpty()) {
+
+         path = new ArrayList<>(mockOtherPath.path);
+         return true;
+      }
+
+      // Update the path to represent the Op() operation
+      path.add(0, "(");
+      switch (op) {
+         case UNION:     path.add("\u222a"); break;
+         case INTERSECT: path.add("\u2229"); break;
+      }
+      path.addAll(mockOtherPath.path);
+      path.add(")");
+      return true;
+   }
+
+
+   @Implementation
+   public void  transform(Matrix matrix)
+   {
+      if (this.transforms == null)
+         this.transforms = new ArrayList<>();
+      this.transforms.add(matrix);
+   }
+
 
 
    String  getPathDescription()
@@ -71,14 +100,48 @@ public class MockPath
             sb.append(' ');
          sb.append(pathSeg);
       }
+      if (transforms != null && !transforms.isEmpty()) {
+         for (Matrix matrix: transforms) {
+            if (matrix.isIdentity())
+               continue;
+            sb.append(" \u00d7 [");
+            formatMatrix(sb, matrix);
+            sb.append(']');
+         }
+      }
       return sb.toString();
    }
 
-   public static String num(float f)
+   private void  formatMatrix(StringBuilder sb, Matrix matrix)
+   {
+      float[]  values = new float[9];
+      matrix.getValues(values);
+      sb.append(num(values[0]));
+      sb.append(", ");
+      sb.append(num(values[3]));
+      sb.append(", ");
+      sb.append(num(values[1]));
+      sb.append(", ");
+      sb.append(num(values[4]));
+      sb.append(", ");
+      sb.append(num(values[2]));
+      sb.append(", ");
+      sb.append(num(values[5]));
+   }
+
+   private static String  num(float f)
    {
       if (f == (long) f)
          return String.format("%d", (long) f);
       else
-         return String.format("%s", f);
+         return String.format("%s", round(f, 5));
    }
+
+   private static float round(float value, int places)
+   {
+      BigDecimal bd = new BigDecimal(Float.toString(value));
+      bd = bd.setScale(places, RoundingMode.HALF_UP);
+      return bd.floatValue();
+   }
+
 }

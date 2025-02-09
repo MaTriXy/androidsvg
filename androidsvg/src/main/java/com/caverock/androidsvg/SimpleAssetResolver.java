@@ -18,13 +18,20 @@ package com.caverock.androidsvg;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.Charset;
 import java.util.HashSet;
 import java.util.Set;
 
+import android.annotation.TargetApi;
 import android.content.res.AssetManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
+import android.graphics.Typeface.Builder;
+import android.os.Build;
+import android.text.TextUtils;
 import android.util.Log;
 
 
@@ -35,11 +42,12 @@ import android.util.Log;
 
 public class SimpleAssetResolver extends SVGExternalFileResolver
 {
-   private static final String  TAG = SimpleAssetResolver.class.getSimpleName();
+   private static final String  TAG = "SimpleAssetResolver";
 
    private AssetManager  assetManager;
    
 
+   @SuppressWarnings({"WeakerAccess", "unused"})
    public SimpleAssetResolver(AssetManager assetManager)
    {
       super();
@@ -64,6 +72,10 @@ public class SimpleAssetResolver extends SVGExternalFileResolver
       if (android.os.Build.VERSION.SDK_INT >= 14) {
          supportedFormats.add("image/webp");
       }
+      // .avif supported in 12.0+ (S)
+      if (android.os.Build.VERSION.SDK_INT >= 31) {
+         supportedFormats.add("image/avif");
+      }
    }
 
 
@@ -72,9 +84,9 @@ public class SimpleAssetResolver extends SVGExternalFileResolver
     * For the font name "Foo", first the file "Foo.ttf" will be tried and if that fails, "Foo.otf".
     */
    @Override
-   public Typeface resolveFont(String fontFamily, int fontWeight, String fontStyle)
+   public Typeface  resolveFont(String fontFamily, float fontWeight, String fontStyle, float fontStretch)
    {
-      Log.i(TAG, "resolveFont("+fontFamily+","+fontWeight+","+fontStyle+")");
+      Log.i(TAG, "resolveFont('"+fontFamily+"',"+fontWeight+",'"+fontStyle+"',"+fontStretch+")");
 
       // Try font name with suffix ".ttf"
       try
@@ -88,18 +100,26 @@ public class SimpleAssetResolver extends SVGExternalFileResolver
       {
          return Typeface.createFromAsset(assetManager, fontFamily + ".otf");
       }
-      catch (RuntimeException e)
+      catch (RuntimeException e) {}
+
+      // That failed, so try ".ttc" (Truetype collection), if supported on this version of Android
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
       {
-         return null;
+         Builder builder = new Builder(assetManager, fontFamily + ".ttc");
+         // Get the first font file in the collection
+         builder.setTtcIndex(0);
+         return builder.build();
       }
+
+      return null;
    }
 
 
    /**
-    * Attempt to find the specified image file in the "assets" folder and return a decoded Bitmap.
+    * Attempt to find the specified image file in the <code>assets</code> folder and return a decoded Bitmap.
     */
    @Override
-   public Bitmap resolveImage(String filename)
+   public Bitmap  resolveImage(String filename)
    {
       Log.i(TAG, "resolveImage("+filename+")");
 
@@ -120,9 +140,58 @@ public class SimpleAssetResolver extends SVGExternalFileResolver
     * other bitmap image formats supported by Android's BitmapFactory class.
     */
    @Override
-   public boolean isFormatSupported(String mimeType)
+   public boolean  isFormatSupported(String mimeType)
    {
       return supportedFormats.contains(mimeType);
+   }
+
+
+   /**
+    * Attempt to find the specified stylesheet file in the "assets" folder and return its string contents.
+    * @since 1.3
+    */
+   @Override
+   public String  resolveCSSStyleSheet(String url)
+   {
+      Log.i(TAG, "resolveCSSStyleSheet("+url+")");
+      return getAssetAsString(url);
+   }
+
+
+   /*
+    * Read the contents of the asset whose name is given by "url" and return it as a String.
+    */
+   private String getAssetAsString(String url)
+   {
+      InputStream is = null;
+      //noinspection TryFinallyCanBeTryWithResources
+      try
+      {
+         is = assetManager.open(url);
+
+         //noinspection CharsetObjectCanBeUsed
+         Reader r = new InputStreamReader(is, Charset.forName("UTF-8"));
+         char[]         buffer = new char[4096];
+         StringBuilder  sb = new StringBuilder();
+         int            len = r.read(buffer);
+         while (len > 0) {
+            sb.append(buffer, 0, len);
+            len = r.read(buffer);
+         }
+         return sb.toString();
+      }
+      catch (IOException e)
+      {
+         return null;
+      }
+      finally {
+         try {
+            if (is != null)
+               is.close();
+         } catch (IOException e) {
+           // Do nothing
+         }
+      }
    }
 
 }

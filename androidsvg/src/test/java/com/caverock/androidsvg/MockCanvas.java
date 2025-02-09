@@ -24,7 +24,6 @@ import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.RectF;
 
-import org.assertj.core.util.Strings;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.shadow.api.Shadow;
@@ -33,6 +32,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Stack;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Mock version of Android Canvas class for testing.
@@ -72,6 +73,10 @@ public class MockCanvas
    public  List<String>  getOperations()
    {
       return this.operations;
+   }
+   public  void          clearOperations()
+   {
+      this.operations.clear();
    }
 
 
@@ -122,7 +127,7 @@ public class MockCanvas
    @Implementation
    public void  drawText(String text, float x, float y, Paint paint)
    {
-      this.operations.add(String.format(Locale.US, "drawText(\"%s\", %s, %s, %s)", text, num(x), num(y), paint));
+      this.operations.add(String.format(Locale.US, "drawText('%s', %s, %s, %s)", text, num(x), num(y), paintToStr(paint)));
    }
 
    @Implementation
@@ -196,6 +201,13 @@ public class MockCanvas
    }
 
    @Implementation
+   public int  saveLayer(RectF bounds, Paint paint, int saveFlags)
+   {
+      this.operations.add(String.format(Locale.US, "saveLayer(%s, %s, %x)", bounds, paintToStr(paint), saveFlags));
+      return internalSave(saveFlags);  // Not accurate, but enough for testing for now.
+   }
+
+   @Implementation
    public int  saveLayerAlpha(RectF bounds, int alpha, int saveFlags)
    {
       this.operations.add(String.format(Locale.US, "saveLayerAlpha(%s, %d, %x)", bounds, alpha, saveFlags));
@@ -236,7 +248,22 @@ public class MockCanvas
 
    private static String  paintToStr(Paint paint)
    {
-      return "Paint()";
+      return (paint == null) ? "null" : ((MockPaint) Shadow.extract(paint)).getDescription();
    }
+
+
+   /*
+    * Look for "Paint()" value in ops entry with index opIndex.
+    * Return the value of the paint property with name propName.
+    */
+   String  paintProp(int opsIndex, String propName)
+   {
+      String   op = operations.get(opsIndex);
+      Pattern  re = Pattern.compile("[(\\s]" + propName + ":([^;)]*)");
+      Matcher  m = re.matcher(op);
+      return m.find() ? m.group(1) : "NO "+propName;
+   }
+
+
 }
 
